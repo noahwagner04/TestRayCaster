@@ -1,0 +1,2 @@
+# TestRaycaster
+This project is mainly for testing raycasting methods / consepts. It's a template for the core of a larger work in progress engine, which can be found [here](https://github.com/noahwagner04/Pseudo3D_JS). If you want to play around with this demo, either download the project or go to this [p5 link](https://editor.p5js.org/WagnerNoah/sketches/jKdX0-9H2).
