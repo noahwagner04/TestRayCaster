@@ -21,7 +21,7 @@ let radsPerSecond = 4;
 
 // color settings for sky
 let cH = 200;
-let cS = 50;
+let cS = 12;
 let cB = 100;
 
 let wallImage;
@@ -175,6 +175,7 @@ function draw() {
 	colorMode(HSB);
 	// sky color 
 	background(cH, cS, cB);
+	depthBuffer = Array(width).fill().map(() => Array(height).fill(Infinity));
 	CastRays();
 	drawSprites();
 	// renderDepth();
@@ -263,11 +264,13 @@ function CastRays() {
 
 				let color = buffer[tx + ty * texWidth];
 				// adding random numbers to color for lighter effect
-				pixels[(x + y * width) * 4] = color[0] + 25;
-				pixels[(x + y * width) * 4 + 1] = color[1] + 25;
-				pixels[(x + y * width) * 4 + 2] = color[2] + 20;
-				pixels[(x + y * width) * 4 + 3] = color[3];
-				depthBuffer[x][y] = rowDistance;
+				if (depthBuffer[x][y] > rowDistance) {
+					pixels[(x + y * width) * 4] = color[0] + 25;
+					pixels[(x + y * width) * 4 + 1] = color[1] + 25;
+					pixels[(x + y * width) * 4 + 2] = color[2] + 20;
+					pixels[(x + y * width) * 4 + 3] = color[3];
+					depthBuffer[x][y] = rowDistance;
+				}
 			}
 		}
 	} else {
@@ -419,18 +422,20 @@ function CastRays() {
 				texPos += step;
 				let color = buffer2[texHeight * texY + texX];
 
-				if (side == 0) {
-					pixels[(x + y * width) * 4] = color[0];
-					pixels[(x + y * width) * 4 + 1] = color[1];
-					pixels[(x + y * width) * 4 + 2] = color[2];
-					pixels[(x + y * width) * 4 + 3] = color[3];
-				} else {
-					pixels[(x + y * width) * 4] = color[0] + 30;
-					pixels[(x + y * width) * 4 + 1] = color[1] + 30;
-					pixels[(x + y * width) * 4 + 2] = color[2] + 25;
-					pixels[(x + y * width) * 4 + 3] = color[3];
+				if (depthBuffer[x][y] > perpWallDist) {
+					if (side == 0) {
+						pixels[(x + y * width) * 4] = color[0];
+						pixels[(x + y * width) * 4 + 1] = color[1];
+						pixels[(x + y * width) * 4 + 2] = color[2];
+						pixels[(x + y * width) * 4 + 3] = color[3];
+					} else {
+						pixels[(x + y * width) * 4] = color[0] + 30;
+						pixels[(x + y * width) * 4 + 1] = color[1] + 30;
+						pixels[(x + y * width) * 4 + 2] = color[2] + 25;
+						pixels[(x + y * width) * 4 + 3] = color[3];
+					}
+					depthBuffer[x][y] = perpWallDist;
 				}
-				depthBuffer[x][y] = perpWallDist;
 			}
 		} else {
 			fill(0, 100, 55);
