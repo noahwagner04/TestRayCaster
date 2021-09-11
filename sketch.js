@@ -1,4 +1,6 @@
 let depthBuffer = [];
+let ctx;
+let screenBuffer;
 // players pos and dir
 let cnv;
 let posX = 12,
@@ -40,6 +42,20 @@ let buffer3 = [];
 let buffer4 = [];
 
 let zBuffer = [];
+
+let FPS = 45;
+
+let skyBox = new Image();
+let skyBoxLoaded = false;
+skyBox.onload = () => {
+  skyBoxLoaded = true;
+};
+
+skyBox.onerror = () => {
+  console.log("error loading skyBox");
+};
+skyBox.src = "./pics/skybox2.png";
+let angle = 0;
 
 class Sprite {
 	constructor(x, y, spriteBuffer) {
@@ -99,7 +115,9 @@ function centerCanvas() {
 function setup() {
 	cnv = createCanvas(canvasX, canvasY);
 	centerCanvas();
-	frameRate(30);
+	ctx = cnv.drawingContext;
+	screenBuffer = getScreenBuffer();
+	frameRate(FPS);
 	for (let y = 0; y < 64; y++) {
 		for (let x = 0; x < 64; x++) {
 			buffer.push(floorImg.get(x, y));
@@ -154,6 +172,7 @@ function draw() {
 		//both camera direction and camera plane must be rotated
 		let rotSpeed = radsPerSecond / frameRate();
 		let oldDirX = dirX;
+		angle -= rotSpeed;
 		dirX = dirX * Math.cos(-rotSpeed) - dirY * Math.sin(-rotSpeed);
 		dirY = oldDirX * Math.sin(-rotSpeed) + dirY * Math.cos(-rotSpeed);
 		let oldPlaneX = planeX;
@@ -165,6 +184,7 @@ function draw() {
 		//both camera direction and camera plane must be rotated
 		let rotSpeed = radsPerSecond / frameRate();
 		let oldDirX = dirX;
+		angle += rotSpeed;
 		dirX = dirX * Math.cos(rotSpeed) - dirY * Math.sin(rotSpeed);
 		dirY = oldDirX * Math.sin(rotSpeed) + dirY * Math.cos(rotSpeed);
 		let oldPlaneX = planeX;
@@ -175,9 +195,15 @@ function draw() {
 	colorMode(HSB);
 	// sky color 
 	background(cH, cS, cB);
+	if(skyBoxLoaded) {
+		// assumes the direction vector is a unit vector
+		renderSkyBox(angle * (180 / Math.PI));
+	}
 	depthBuffer = Array(width).fill().map(() => Array(height).fill(Infinity));
+	screenBuffer = getScreenBuffer();
 	CastRays();
 	drawSprites();
+	setScreenBuffer(screenBuffer, 0, 0);
 	// renderDepth();
 	// sprites.forEach((s) => {
 	// 	s.moveToPlayer();
@@ -187,102 +213,27 @@ function draw() {
 }
 
 function renderDepth() {
-	loadPixels();
+	loadscreenBuffer();
 	for (let x = 0; x < width; x++) {
 		for (let y = 0; y < height; y++) {
-			pixels[(x + y * width) * 4] /= depthBuffer[x][y];
-			pixels[(x + y * width) * 4 + 1] /= depthBuffer[x][y];
-			pixels[(x + y * width) * 4 + 2] /= depthBuffer[x][y];
-			pixels[(x + y * width) * 4 + 3] = 255;
+			screenBuffer[(x + y * width) * 4] /= depthBuffer[x][y];
+			screenBuffer[(x + y * width) * 4 + 1] /= depthBuffer[x][y];
+			screenBuffer[(x + y * width) * 4 + 2] /= depthBuffer[x][y];
+			screenBuffer[(x + y * width) * 4 + 3] = 255;
 		}
 	}
-	updatePixels();
+	updatescreenBuffer();
 }
 
 function CastRays() {
-	if (document.getElementById("textFloor").checked)
-		loadPixels();
 	if (document.getElementById("textFloor").checked) {
-		for (let y = 0; y < height; y++) {
-			// rayDir for leftmost ray (x = 0) and rightmost ray (x = w)
-			// width / height is camera aspect ratio fix
-			let rayDirX0 = dirX - planeX * aspectRatio;
-			let rayDirY0 = dirY - planeY * aspectRatio;
-			let rayDirX1 = dirX + planeX * aspectRatio;
-			let rayDirY1 = dirY + planeY * aspectRatio;
-
-			// Current y position compared to the center of the screen (the horizon)
-			// multiplied by the length of our plane to match our raycasting FOV
-			let p = (y - height / 2) * planeLength * 2;
-			// Vertical position of the camera.
-			let posZ = 0.5 * height;
-
-			/*
-			another set of values that can be used for p and posZ. These lines better represent these values, 
-			but we can still use the other p, and posZ because they are proportional. 
-			This means that even if they are both in pixel coords, they still calculate the same thing. 
-			(looking at ceiling / floor casting section helps visualise this in raycasting notes doc)
-			*/
-
-			/*
-			the length of our screen vertically (planeLength * 2, defined 
-			by how we map our raycasting world vertically, 
-			they both have to be the same range)
-			*/
-
-			// let p = map(y, 0, height, -planeLength, planeLength)
-
-			/*
-			vertical position of camera relative to the bottom of the screen. 
-			This essentially represents the amount of units our floor and ceiling 
-			is up and down from our camera.
-			*/
-
-			// let posZ = 0.5;
-
-			// Horizontal distance from the camera to the floor for the current row.
-			// 0.5 is the z position exactly in the middle between floor and ceiling.
-			let rowDistance = abs(posZ / p);
-
-			let floorStepX = rowDistance * (rayDirX1 - rayDirX0) / width;
-			let floorStepY = rowDistance * (rayDirY1 - rayDirY0) / width;
-
-			let floorX = posX + rowDistance * rayDirX0;
-			let floorY = posY + rowDistance * rayDirY0;
-
-			for (let x = 0; x < width; ++x) {
-				// the cell coord is simply got from the integer parts of floorX and floorY
-				let cellX = (int)(floorX);
-				let cellY = (int)(floorY);
-
-				// get the texture coordinate from the fractional part
-				let tx = Math.floor(texWidth * (floorX - cellX)) & (texWidth - 1);
-				let ty = Math.floor(texHeight * (floorY - cellY)) & (texHeight - 1);
-
-				floorX += floorStepX;
-				floorY += floorStepY;
-
-				let color = buffer[tx + ty * texWidth];
-				// adding random numbers to color for lighter effect
-				if (depthBuffer[x][y] > rowDistance) {
-					pixels[(x + y * width) * 4] = color[0] + 25;
-					pixels[(x + y * width) * 4 + 1] = color[1] + 25;
-					pixels[(x + y * width) * 4 + 2] = color[2] + 20;
-					pixels[(x + y * width) * 4 + 3] = color[3];
-					depthBuffer[x][y] = rowDistance;
-				}
-			}
-		}
+		renderFloorCeiling(0, undefined, true);
+		// renderFloorCeiling(0.5, floorMap, true);
 	} else {
 		fill(0, 0, 50);
 		noStroke();
 		rect(0, height / 2, width, height / 2);
 	}
-	if (document.getElementById("textFloor").checked)
-		updatePixels();
-
-	if (document.getElementById("textWalls").checked)
-		loadPixels();
 	for (let x = 0; x < canvasX; x++) {
 
 		// setting up variables for DDA
@@ -302,8 +253,9 @@ function CastRays() {
 		// distance to next grid intersections, x and y
 
 		// unsimplified way, dividing the length of the ray by its x / y components
-		// let deltaDistX = Math.sqrt(1 + (rayDirY / rayDirX) * (rayDirY / rayDirX));
-		// let deltaDistY = Math.sqrt(1 + (rayDirX / rayDirY) * (rayDirX / rayDirY));
+		// let length = Math.sqrt(rayDirX * rayDirX + rayDirY * rayDirY);
+		// let deltaDistX = Math.abs(length / (rayDirX * rayDirX));
+		// let deltaDistY = Math.abs(length / (rayDirY * rayDirY));
 
 		// simplified way, allows for further perpWallDist simplification down below
 		let deltaDistX = Math.abs(1 / rayDirX);
@@ -355,11 +307,9 @@ function CastRays() {
 				// if (worldMap[mapX][mapY] === 7) {
 				// 	if (sideDistX - deltaDistX / 1.5 < sideDistY) {
 				// 		sideDistX += deltaDistX - deltaDistX / 1.5; // minus deltaDistX becuase we subtract deltaDistX from sideDist when getting perpwalldist
-				// 		mapX += stepX;
 				// 		side = 0;
 				// 	} else {
 				// 		sideDistY += deltaDistY;
-				// 		mapY += stepY;
 				// 		side = 1;
 				// 	}
 				// }
@@ -424,15 +374,15 @@ function CastRays() {
 
 				if (depthBuffer[x][y] > perpWallDist) {
 					if (side == 0) {
-						pixels[(x + y * width) * 4] = color[0];
-						pixels[(x + y * width) * 4 + 1] = color[1];
-						pixels[(x + y * width) * 4 + 2] = color[2];
-						pixels[(x + y * width) * 4 + 3] = color[3];
+						screenBuffer[(x + y * width) * 4] = color[0];
+						screenBuffer[(x + y * width) * 4 + 1] = color[1];
+						screenBuffer[(x + y * width) * 4 + 2] = color[2];
+						screenBuffer[(x + y * width) * 4 + 3] = color[3];
 					} else {
-						pixels[(x + y * width) * 4] = color[0] + 30;
-						pixels[(x + y * width) * 4 + 1] = color[1] + 30;
-						pixels[(x + y * width) * 4 + 2] = color[2] + 25;
-						pixels[(x + y * width) * 4 + 3] = color[3];
+						screenBuffer[(x + y * width) * 4] = color[0] + 30;
+						screenBuffer[(x + y * width) * 4 + 1] = color[1] + 30;
+						screenBuffer[(x + y * width) * 4 + 2] = color[2] + 25;
+						screenBuffer[(x + y * width) * 4 + 3] = color[3];
 					}
 					depthBuffer[x][y] = perpWallDist;
 				}
@@ -443,8 +393,6 @@ function CastRays() {
 			rect(x, drawStart, 1, drawEnd - drawStart);
 		}
 	}
-	if (document.getElementById("textWalls").checked)
-		updatePixels();
 }
 
 function drawSprites() {
@@ -455,7 +403,6 @@ function drawSprites() {
 		return b.distance - a.distance;
 	});
 
-	loadPixels();
 	for (let i = 0; i < sprites.length; i++) {
 		let spriteX = sprites[i].x - posX;
 		let spriteY = sprites[i].y - posY;
@@ -497,17 +444,117 @@ function drawSprites() {
 
 					let color = sprites[i].spriteBuffer[constrain(Math.floor(texWidth * texY + texX), 0, 4095)];
 					// interpolate the current screens rgb value to the color of the sprite depeding on the alpha of the sprites pixel
-					let red = color[3] * ((color[0] - pixels[(stripe + y * width) * 4]) / 255) + pixels[(stripe + y * width) * 4];
-					let blue = color[3] * ((color[1] - pixels[(stripe + y * width) * 4 + 1]) / 255) + pixels[(stripe + y * width) * 4 + 1];
-					let green = color[3] * ((color[2] - pixels[(stripe + y * width) * 4 + 2]) / 255) + pixels[(stripe + y * width) * 4 + 2];
-					pixels[(stripe + y * width) * 4] = red;
-					pixels[(stripe + y * width) * 4 + 1] = blue;
-					pixels[(stripe + y * width) * 4 + 2] = green;
-					pixels[(stripe + y * width) * 4 + 3] = 255;
+					let bias1 = color[3] / 255;
+					let bias2 = 1 - bias1;
+					let red = bias2 * screenBuffer[(stripe + y * width) * 4] + bias1 * color[0];
+					let blue = bias2 * screenBuffer[(stripe + y * width) * 4 + 1] + bias1 * color[1];
+					let green = bias2 * screenBuffer[(stripe + y * width) * 4 + 2] + bias1 * color[2];
+					screenBuffer[(stripe + y * width) * 4] = red;
+					screenBuffer[(stripe + y * width) * 4 + 1] = blue;
+					screenBuffer[(stripe + y * width) * 4 + 2] = green;
+					screenBuffer[(stripe + y * width) * 4 + 3] = 255;
 					depthBuffer[stripe][y] = transformY;
 				}
 			}
 		}
 	}
-	updatePixels();
+}
+
+function renderFloorCeiling(vertical, array, onlyFloor, onlyCeiling) {
+	for (let y = 0; y < height; y++) {
+		// rayDir for leftmost ray (x = 0) and rightmost ray (x = w)
+		// width / height is camera aspect ratio fix
+		let rayDirX0 = dirX - planeX * aspectRatio;
+		let rayDirY0 = dirY - planeY * aspectRatio;
+		let rayDirX1 = dirX + planeX * aspectRatio;
+		let rayDirY1 = dirY + planeY * aspectRatio;
+
+		// Current y position compared to the center of the screen (the horizon)
+		// multiplied by the length of our plane to match our raycasting FOV
+		let p = (y - height / 2) * planeLength * 2;
+		// Vertical position of the camera.
+		let posZ = 0.5 * height - vertical * height / 2;
+		/*
+		another set of values that can be used for p and posZ. These lines better represent these values, 
+		but we can still use the other p, and posZ because they are proportional. 
+		This means that even if they are both in pixel coords, they still calculate the same thing. 
+		(looking at ceiling / floor casting section helps visualise this in raycasting notes doc)
+		*/
+
+		/*
+		the length of our screen vertically (planeLength * 2, defined 
+		by how we map our raycasting world vertically, 
+		they both have to be the same range)
+		*/
+
+		// let p = map(y, 0, height, -planeLength, planeLength)
+
+		/*
+		vertical position of camera relative to the bottom of the screen. 
+		This essentially represents the amount of units our floor and ceiling 
+		is up and down from our camera.
+		*/
+
+		// let posZ = 0.5;
+
+		// Horizontal distance from the camera to the floor for the current row.
+		// 0.5 is the z position exactly in the middle between floor and ceiling.
+		let rowDistance = abs(posZ / p);
+
+		let floorStepX = rowDistance * (rayDirX1 - rayDirX0) / width;
+		let floorStepY = rowDistance * (rayDirY1 - rayDirY0) / width;
+
+		let floorX = posX + rowDistance * rayDirX0;
+		let floorY = posY + rowDistance * rayDirY0;
+		if (onlyFloor && y < canvasY / 2) continue;
+		if (onlyCeiling && y > canvasY / 2) continue;
+		for (let x = 0; x < width; ++x) {
+			// the cell coord is simply got from the integer parts of floorX and floorY
+			let cellX = (int)(floorX);
+			let cellY = (int)(floorY);
+
+			// get the texture coordinate from the fractional part
+			let tx = Math.floor(texWidth * (floorX - cellX)) & (texWidth - 1);
+			let ty = Math.floor(texHeight * (floorY - cellY)) & (texHeight - 1);
+
+			floorX += floorStepX;
+			floorY += floorStepY;
+
+			let color = buffer[tx + ty * texWidth];
+			// adding random numbers to color for lighter effect
+			if (depthBuffer[x][y] > rowDistance) {
+				if (array !== undefined && array[cellX] !== undefined && array[cellX][cellY] !== undefined && array[cellX][cellY] === vertical) {
+					screenBuffer[(x + y * width) * 4] = color[0] + 25;
+					screenBuffer[(x + y * width) * 4 + 1] = color[1] + 25;
+					screenBuffer[(x + y * width) * 4 + 2] = color[2] + 20;
+					screenBuffer[(x + y * width) * 4 + 3] = color[3];
+					depthBuffer[x][y] = rowDistance;
+				} else if (array === undefined) {
+					screenBuffer[(x + y * width) * 4] = color[0] + 25;
+					screenBuffer[(x + y * width) * 4 + 1] = color[1] + 25;
+					screenBuffer[(x + y * width) * 4 + 2] = color[2] + 20;
+					screenBuffer[(x + y * width) * 4 + 3] = color[3];
+					depthBuffer[x][y] = rowDistance;
+				}
+			}
+		}
+	}
+}
+
+function getScreenBuffer() {
+	return ctx.getImageData(0, 0, cnv.width, cnv.height).data;
+}
+
+function setScreenBuffer(buffer, x = 0, y = 0, dx = 0, dy = 0, dw, dh) {
+	var newImageData = new ImageData(buffer, cnv.width);
+	dw = dw || cnv.width;
+	dh = dh || cnv.height;
+	ctx.putImageData(newImageData, x, y, dx, dy, dw, dh);
+}
+
+function renderSkyBox(a) {
+    let x = map(a % 360, 0, 360, 0, width * 2)
+    ctx.drawImage(skyBox, x, 0, width * 2, height / 2);
+    ctx.drawImage(skyBox, x + width * 2, 0, width * 2, height / 2);
+    ctx.drawImage(skyBox, x - width * 2, 0, width * 2, height / 2);
 }
